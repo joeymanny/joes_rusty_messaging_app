@@ -1,5 +1,4 @@
-use std::{io::{Read, Write}, net::TcpStream, net::SocketAddr};
-use sha2::Digest;
+use std::{io::Write, net::SocketAddr};
 use owo_colors::OwoColorize;
 
 fn main() {
@@ -66,7 +65,7 @@ fn handle_login(socket: Option<SocketAddr>) {
             stream.flush().unwrap();
             stream.shutdown(std::net::Shutdown::Write).unwrap();
         },
-        Err(e) => ()
+        Err(_) => ()
     }
 }
 
