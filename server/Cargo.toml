@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 lib = { path = "../lib"}
 serde_json = "*"
+clap = { version = "*", features = ["derive"]}
+owo-colors = "*"
