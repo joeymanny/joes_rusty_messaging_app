@@ -15,12 +15,12 @@ pub const ERR_MSG_STDOUT: &str = "problem with stout";
 
 pub enum Message {
     LoginRequest { username: String, password: String },
-    LoginReply(ReplyType),
+    LoginReply(LoginResult),
     BadRequest,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 
-pub enum ReplyType {
+pub enum LoginResult {
     Accepted,
     BadUser,
     BadPass,

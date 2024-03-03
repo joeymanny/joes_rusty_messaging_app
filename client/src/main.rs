@@ -1,5 +1,5 @@
 use clap::Parser;
-use lib::{Message, ReplyType};
+use lib::{Message, LoginResult};
 use owo_colors::OwoColorize;
 use std::{io::Write, net::SocketAddr};
 
@@ -96,13 +96,13 @@ fn handle_login(socket: Option<SocketAddr>) {
 
     match message {
         Message::LoginReply(reply) => match reply {
-            ReplyType::Accepted => {
+            LoginResult::Accepted => {
                 println!("{}", "login accepted!".green())
             }
-            ReplyType::BadPass => {
+            LoginResult::BadPass => {
                 println!("{} bad password", "warning".red())
             }
-            ReplyType::BadUser => {
+            LoginResult::BadUser => {
                 println!("{} bad user", "warning".red())
             }
         },

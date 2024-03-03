@@ -69,5 +69,5 @@ fn main() {
 fn handle_login(username: String, password: String, stream: &mut TcpStream) {
     dbg!(username);
     dbg!(password);
-    lib::send_message(stream, &Message::LoginReply(lib::ReplyType::Accepted));
+    lib::send_message(stream, &Message::LoginReply(lib::LoginResult::Accepted));
 }
