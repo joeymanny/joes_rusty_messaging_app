@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 sha2 = "*"
 lib = { path = "../lib"}
-owo-colors = "*"
+# owo-colors = "*"
 serde_json = "*"
 clap = { version = "*", features = ["derive"]}
+eframe = { version = "*" }
+egui = "*"
