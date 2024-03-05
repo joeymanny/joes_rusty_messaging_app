@@ -47,11 +47,11 @@ fn main() {
         };
         println!("incoming connection from {}", client_sock.ip());
         // interpret as a string
-        let data = lib::get_stream_string(&mut stream);
+        let data = lib::get_stream_string(&mut stream).unwrap();
         let message = match serde_json::from_str(&data) {
             Ok(v) => v,
             Err(_) => {
-                lib::send_message(&mut stream, &lib::Message::BadRequest);
+                lib::send_message(&mut stream, &lib::Message::BadRequest).unwrap();
                 println!("bad request from {}; terminating session", client_sock.ip());
                 continue;
             }
@@ -69,5 +69,5 @@ fn main() {
 fn handle_login(username: String, password: String, stream: &mut TcpStream) {
     dbg!(username);
     dbg!(password);
-    lib::send_message(stream, &Message::LoginReply(lib::LoginResult::Accepted));
+    lib::send_message(stream, &Message::LoginReply(lib::LoginStatus::Accepted)).unwrap();
 }
