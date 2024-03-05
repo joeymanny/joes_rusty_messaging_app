@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use lib::Message;
 
 fn main() {
