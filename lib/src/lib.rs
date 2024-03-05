@@ -15,25 +15,30 @@ pub const ERR_MSG_STDOUT: &str = "problem with stout";
 
 pub enum Message {
     LoginRequest { username: String, password: String },
-    LoginReply(LoginResult),
+    LoginReply(LoginStatus),
     BadRequest,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 
-pub enum LoginResult {
+pub enum LoginStatus {
     Accepted,
     BadUser,
     BadPass,
 }
-pub fn get_hash(input: String) -> String {
+pub fn get_hash(input: &String) -> String {
     use sha2::Digest;
     let mut hasher = sha2::Sha256::new();
     hasher.update(input);
-    hasher
-        .finalize()
-        .as_slice()
-        .iter()
-        .fold(String::new(), |s, b| format!("{s}{b:X?}"))
+    let hash = hasher.finalize();
+    let mut buf = String::with_capacity(hash.as_slice().len() * 2 + 1);
+    for v in hash {
+        buf.push_str(&format!("{v:X?}"));
+    }
+    buf
+    // slice
+    //     .iter()
+    //     .for_each(|v| string.push(char::from_u32(*v as u32).unwrap()));
+    // string
 }
 
 // pub fn send_malformed_request(socket: &mut TcpStream) {
@@ -42,13 +47,18 @@ pub fn get_hash(input: String) -> String {
 //     socket.write(&data).unwrap();
 // }
 
-pub fn get_stream_string(stream: &mut TcpStream) -> String {
+pub fn get_stream_string(stream: &mut TcpStream) -> Result<String, Box<dyn std::error::Error>> {
     let mut buf = String::new();
 
     for byte in stream.bytes() {
-        match byte.expect("byte couldn't be read") {
-            0 => break,
-            v => buf.push(char::from_u32(v as u32).expect("non-char byte send")),
+        match byte {
+            Ok(b) => match b{
+                0 => break,
+                v => buf.push(char::from_u32(v as u32).expect("non-char byte sent")),
+            },
+            Err(e) => {
+                return Err(e.into())
+            }
         }
     }
     stream.flush().unwrap();
@@ -57,20 +67,21 @@ pub fn get_stream_string(stream: &mut TcpStream) -> String {
     //     .map(|b| char::from_u32(b.unwrap() as u32).unwrap())
     //     .collect::<String>()
     // ;
-    buf
+    Ok(buf)
 }
 
-pub fn get_message(stream: &mut TcpStream) -> Result<Message, String> {
-    let string = get_stream_string(stream);
+pub fn get_message(stream: &mut TcpStream) -> Result<Message, Box<dyn std::error::Error>> {
+    let string = get_stream_string(stream)?;
     match serde_json::from_str(&string) {
         Ok(v) => Ok(v),
-        Err(_) => Err(string),
+        Err(e) => Err(e.into()),
     }
 }
-pub fn send_message(stream: &mut TcpStream, message: &Message) {
+pub fn send_message(stream: &mut TcpStream, message: &Message) -> Result<(), Box<dyn std::error::Error>>{
     let mut serialized = serde_json::to_string(&message).unwrap().as_bytes().to_vec();
     serialized.push(0);
-    stream.write_all(&serialized).unwrap();
+    stream.write_all(&serialized)?;
     stream.flush().unwrap();
+    Ok(())
     // stream.shutdown(std::net::Shutdown::Write).unwrap();
 }
