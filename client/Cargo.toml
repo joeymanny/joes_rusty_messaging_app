@@ -13,3 +13,5 @@ serde_json = "*"
 clap = { version = "*", features = ["derive"]}
 eframe = { version = "*" }
 egui = "*"
+egui_extras = {version = "*", features = ["all_loaders"]}
+image = {version = "*", features = ["gif"]}
