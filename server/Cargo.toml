@@ -10,3 +10,4 @@ lib = { path = "../lib"}
 serde_json = "*"
 clap = { version = "*", features = ["derive"]}
 owo-colors = "*"
+num_cpus = "*"
