@@ -2,7 +2,7 @@ use lib::Message;
 
 fn main() {
     let options = eframe::NativeOptions::default();
-    eframe::run_native("My App", options, Box::new(|cc| Box::new(MyApp::new(cc)))).unwrap();
+    eframe::run_native("login", options, Box::new(|cc| Box::new(MyApp::new(cc)))).unwrap();
 }
 struct MyApp {
     menu: Menu,
@@ -15,6 +15,7 @@ enum Menu {
         username: String,
         password: String,
         login_failure: Option<LoginResult>,
+        login_now: bool,
     },
     Contacts,
     Chat {
@@ -38,11 +39,14 @@ impl MyApp {
             override_text_style: Some(egui::style::TextStyle::Monospace),
             ..egui::style::Style::default()
         });
+        egui_extras::install_image_loaders(&cc.egui_ctx);
+
         MyApp {
             menu: Menu::Login {
                 username: String::new(),
                 password: String::new(),
                 login_failure: None,
+                login_now: false,
             },
             server: None,
             ip_submission: String::default(),
@@ -78,17 +82,29 @@ impl eframe::App for MyApp {
     }
 }
 fn login_menu(app_state: &mut MyApp, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-    let (username, password, login_failure) = match app_state.menu {
+    let mut login: bool = false;
+    let (username, password, login_failure, login_now) = match app_state.menu {
         Menu::Login {
             ref mut username,
             ref mut password,
             ref mut login_failure,
-        } => (username, password, login_failure),
+            ref mut login_now,
+        } => (username, password, login_failure, login_now),
         _ => panic!("this is unreachable"),
     };
-    let mut login_now = false;
+    if *login_now {
+        let result = handle_login(app_state.server, username, password);
+        if let LoginResult::Success = result {
+            login = true;
+        } else {
+            *login_failure = Some(result);
+        }
+    }
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
+            // ui.collapsing("THERE IS NO PORN IN HERE", |ui|{
+            //     ui.image("https://static1.e621.net/data/a5/b8/a5b888a8b5dfaf28825c9e6a1ae49ff8.png")
+            // });
             ui.label("Welcome to login");
             egui::TextEdit::singleline(username)
                 .hint_text("username")
@@ -97,17 +113,18 @@ fn login_menu(app_state: &mut MyApp, ctx: &egui::Context, _frame: &mut eframe::F
                 .password(true)
                 .hint_text("password")
                 .show(ui);
-            login_now = ui.button("log me in scotty").clicked();
-            ui.label(format!("login error: {:?}", login_failure));
+            *login_now = ui.button("log me in scotty").clicked();
+            if let Some(e) = login_failure{
+                ui.label(format!("login error: {:?}", e));
+            }
+            if *login_now {
+                ui.label("⟳");
+            }
+
         });
     });
-    if login_now {
-        let result = handle_login(app_state.server, username, password);
-        if let LoginResult::Success = result {
-            app_state.menu = Menu::Contacts;
-        } else {
-            *login_failure = Some(result);
-        }
+    if login {
+        app_state.menu = Menu::Contacts
     }
 }
 fn handle_login(
@@ -155,6 +172,7 @@ fn contacts_menu(app_state: &mut MyApp, ctx: &egui::Context, _frame: &mut eframe
                     username: String::new(),
                     password: String::new(),
                     login_failure: None,
+                    login_now: false,
                 }
             }
         });
