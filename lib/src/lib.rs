@@ -20,6 +20,7 @@ pub enum Message {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 
+
 pub enum LoginStatus {
     Accepted,
     BadUser,
@@ -30,9 +31,9 @@ pub fn get_hash(input: &String) -> String {
     let mut hasher = sha2::Sha512::new();
     hasher.update(input);
     let hash = hasher.finalize();
-    let mut buf = String::with_capacity(hash.as_slice().len() * 2 + 1);
-    for v in hash {
-        buf.push_str(&format!("{v:X?}"));
+    let mut buf = String::with_capacity(hash.as_slice().len() * 4 + 1);
+    for v in hash.into_iter() {
+        buf.push_str(&format!("{v:02X}"));
     }
     buf
 }
@@ -43,7 +44,7 @@ pub fn get_stream_string(stream: &mut TcpStream) -> Result<String, Box<dyn std::
         match byte {
             Ok(b) => match b{
                 0 => break,
-                v => buf.push(char::from_u32(v as u32).expect("non-char byte sent")),
+                v => buf.push(char::from_u32(v as u32).unwrap()), // todo: handle invalid chars
             },
             Err(e) => {
                 return Err(e.into())

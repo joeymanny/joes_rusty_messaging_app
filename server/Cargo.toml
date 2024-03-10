@@ -11,3 +11,6 @@ serde_json = "*"
 clap = { version = "*", features = ["derive"]}
 owo-colors = "*"
 num_cpus = "*"
+sqlx = { version = "*", features = ["runtime-tokio", "postgres"]}
+tokio = { version = "*", features = ["full"]}
+futures = "*"

@@ -93,7 +93,9 @@ fn login_menu(app_state: &mut MyApp, ctx: &egui::Context, _frame: &mut eframe::F
         _ => panic!("this is unreachable"),
     };
     if *login_now {
-        let result = handle_login(app_state.server, username, password);
+        let result = handle_login(app_state.server, username.clone(), password.clone());
+        password.clear();
+        username.clear();
         if let LoginResult::Success = result {
             login = true;
         } else {
@@ -129,16 +131,14 @@ fn login_menu(app_state: &mut MyApp, ctx: &egui::Context, _frame: &mut eframe::F
 }
 fn handle_login(
     ip: Option<std::net::IpAddr>,
-    username: &mut String,
-    password: &mut String,
+    username: String,
+    mut password: String,
 ) -> LoginResult {
     let ip = match ip {
         Some(v) => v,
         None => return LoginResult::NoServer
     };
-    let userhash = lib::get_hash(username);
-    let passhash = lib::get_hash(password);
-    username.clear();
+    let passhash = lib::get_hash(&password);
     password.clear();
     let mut stream = match std::net::TcpStream::connect_timeout(&std::net::SocketAddr::new(ip, lib::PORT), std::time::Duration::from_secs(1)){
         Ok(v) => v,
@@ -146,7 +146,7 @@ fn handle_login(
     };
     lib::send_message(
         &mut stream,
-        &lib::Message::LoginRequest { username: userhash , password: passhash}
+        &lib::Message::LoginRequest { username, password: passhash}
     ).unwrap();
     let response = match lib::get_message(&mut stream){
         Ok(m) => m,
