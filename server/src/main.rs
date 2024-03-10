@@ -85,8 +85,8 @@ fn main() {
                     }
                 };
                 println!("incoming connection from {}", client_sock.ip());
-                
-                let data = match lib::get_stream_string(&mut stream) {
+
+                let data = match lib::get_stream_string(&mut stream).await {
                     Ok(v) => v,
                     Err(e) => {
                         eprintln!("error getting data: {e:?}");

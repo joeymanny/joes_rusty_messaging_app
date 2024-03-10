@@ -15,3 +15,4 @@ eframe = { version = "*" }
 egui = "*"
 egui_extras = {version = "*", features = ["all_loaders"]}
 image = {version = "*", features = ["gif"]}
+tokio ={ version = "*", features = ["full"]}

@@ -37,7 +37,7 @@ pub fn get_hash(input: &String) -> String {
     }
     buf
 }
-pub fn get_stream_string(stream: &mut TcpStream) -> Result<String, Box<dyn std::error::Error>> {
+pub async fn get_stream_string(stream: &mut TcpStream) -> Result<String, Box<dyn std::error::Error>> {
     let mut buf = String::new();
     stream.set_read_timeout(Some(std::time::Duration::from_millis(500))).expect("couldn't set read timeout");
     for byte in stream.bytes() {
@@ -54,8 +54,8 @@ pub fn get_stream_string(stream: &mut TcpStream) -> Result<String, Box<dyn std::
     Ok(buf)
 }
 
-pub fn get_message(stream: &mut TcpStream) -> Result<Message, Box<dyn std::error::Error>> {
-    let string = get_stream_string(stream)?;
+pub async fn get_message(stream: &mut TcpStream) -> Result<Message, Box<dyn std::error::Error>> {
+    let string = get_stream_string(stream).await?;
     match serde_json::from_str(&string) {
         Ok(v) => Ok(v),
         Err(e) => Err(e.into()),
