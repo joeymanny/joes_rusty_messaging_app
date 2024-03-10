@@ -31,7 +31,7 @@ pub fn get_hash(input: &String) -> String {
     let mut hasher = sha2::Sha512::new();
     hasher.update(input);
     let hash = hasher.finalize();
-    let mut buf = String::with_capacity(hash.as_slice().len() * 4 + 1);
+    let mut buf = String::with_capacity(128);
     for v in hash.into_iter() {
         buf.push_str(&format!("{v:02X}"));
     }
@@ -39,7 +39,7 @@ pub fn get_hash(input: &String) -> String {
 }
 pub async fn get_stream_string(stream: &mut TcpStream) -> Result<String, Box<dyn std::error::Error>> {
     let mut buf = String::new();
-    stream.set_read_timeout(Some(std::time::Duration::from_millis(500))).expect("couldn't set read timeout");
+    stream.set_read_timeout(Some(std::time::Duration::from_millis(500)))?;
     for byte in stream.bytes() {
         match byte {
             Ok(b) => match b{
@@ -62,7 +62,7 @@ pub async fn get_message(stream: &mut TcpStream) -> Result<Message, Box<dyn std:
     }
 }
 pub fn send_message(stream: &mut TcpStream, message: &Message) -> Result<(), Box<dyn std::error::Error>>{
-    let mut serialized = serde_json::to_string(&message).expect("valid datastructure should serialize").as_bytes().to_vec();
+    let mut serialized = serde_json::to_string(&message)?.as_bytes().to_vec();
     serialized.push(0);
     stream.write_all(&serialized)?;
     Ok(())
