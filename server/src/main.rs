@@ -131,6 +131,15 @@ fn main() {
         std::thread::sleep(std::time::Duration::MAX);
     }
 }
+
+#[derive(sqlx::FromRow)]
+struct UserTableRow{
+    id: i32,
+    username: String,
+    password: String,
+    email: Option<String>
+}
+
 async fn handle_login(
     username: String,
     password: String,
@@ -139,12 +148,24 @@ async fn handle_login(
 ) {
     eprintln!("{username}");
     eprintln!("{password}");
-    let e: Vec<(i32, String, String, Option<String>)> = sqlx::query_as("SELECT * FROM users WHERE $1 = users.username")
+    let rows: Vec<UserTableRow> = sqlx::query_as("SELECT * FROM users WHERE $1 = users.username")
         .bind(username)
         .fetch_all(pool)
         .await
         .unwrap();
-    println!("response from server: {e:?}");
+    match rows.len(){
+        0 => lib::send_message(stream, &Message::LoginReply(lib::LoginStatus::BadUser)),
+        1 => {
+            if password == rows[0].password {
+                lib::send_message(stream, &Message::LoginReply(lib::LoginStatus::Accepted))
+            } else {
+                lib::send_message(stream, &Message::LoginReply(lib::LoginStatus::BadPass))
+            }
+        },
+        _ => {
+            lib::send_message(stream, &Message::InternalError)
+        }
+    }.expect("couldn't send reply");
     if let Err(e) = lib::send_message(stream, &Message::LoginReply(lib::LoginStatus::Accepted)) {
         eprintln!("coundn't send data: {e:?}");
     }

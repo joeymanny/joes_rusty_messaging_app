@@ -17,6 +17,7 @@ pub enum Message {
     LoginRequest { username: String, password: String },
     LoginReply(LoginStatus),
     BadRequest,
+    InternalError
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 

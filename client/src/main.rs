@@ -107,7 +107,7 @@ async fn login_menu(menu: &mut Menu, server: &Option<std::net::IpAddr>, ctx: &eg
     }
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
-            #[cfg(feature = "HELLA sus")]
+            #[cfg(feature = "HELLA_sus")]
             ui.collapsing("THERE IS NOTHING IN HERE", |ui|{
                 ui.image("https://static1.e621.net/data/a5/b8/a5b888a8b5dfaf28825c9e6a1ae49ff8.png")
             });
