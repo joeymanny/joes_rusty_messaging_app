@@ -1,3 +1,4 @@
+use egui::Button;
 use lib::Message;
 
 fn main() {
@@ -5,7 +6,7 @@ fn main() {
     eframe::run_native("login", options, Box::new(|cc| Box::new(MyApp::new(cc)))).unwrap();
 }
 struct MyApp {
-    menu: Menu,
+    current_menu: Menu,
     server: Option<std::net::IpAddr>,
     ip_submission: String,
     runtime: tokio::runtime::Runtime
@@ -43,7 +44,7 @@ impl MyApp {
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
         MyApp {
-            menu: Menu::Login {
+            current_menu: Menu::Login {
                 username: String::new(),
                 password: String::new(),
                 login_failure: None,
@@ -68,18 +69,16 @@ impl eframe::App for MyApp {
                     "None".to_owned()
                 }
             ));
-            if ui
-                .text_edit_singleline(&mut self.ip_submission)
-                .lost_focus()
-            {
+            let ip_input = ui.text_edit_singleline(&mut self.ip_submission);
+            if ip_input.lost_focus() || (ip_input.clicked_elsewhere() && !self.ip_submission.is_empty()){
                 self.server = self.ip_submission.parse().ok();
                 self.ip_submission.clear();
             };
         });
-        match self.menu {
-            Menu::Login { .. } => login_menu(&mut self.menu, &self.server, ctx, frame).await,
-            Menu::Contacts => contacts_menu(&mut self.menu, ctx, frame),
-            Menu::Chat { user_id } => chat_menu(&mut self.menu, ctx, frame, user_id),
+        match self.current_menu {
+            Menu::Login { .. } => login_menu(&mut self.current_menu, &self.server, ctx, frame).await,
+            Menu::Contacts => contacts_menu(&mut self.current_menu, ctx, frame),
+            Menu::Chat { user_id } => chat_menu(&mut self.current_menu, ctx, frame, user_id),
         }
     });
     }
@@ -115,11 +114,16 @@ async fn login_menu(menu: &mut Menu, server: &Option<std::net::IpAddr>, ctx: &eg
             egui::TextEdit::singleline(username)
                 .hint_text("username")
                 .show(ui);
+
             egui::TextEdit::singleline(password)
                 .password(true)
                 .hint_text("password")
                 .show(ui);
-            *login_now = ui.button("log me in scotty").clicked();
+            let button_response = ui.add_enabled(!(username.is_empty() || password.is_empty()), Button::new("log me in scotty"));
+            *login_now = if button_response.enabled() {
+                button_response.clicked()
+            } else{ false };
+
             if let Some(e) = login_failure{
                 ui.label(format!("login error: {:?}", e));
             }
