@@ -1,6 +1,5 @@
 use std::{
-    net::{Ipv4Addr, TcpListener, TcpStream},
-    sync::Arc,
+    net::{Ipv4Addr, TcpListener, TcpStream}, sync::Arc
 };
 
 use clap::Parser;
@@ -13,16 +12,31 @@ const FALLBACK_ADDRESS: std::net::IpAddr = std::net::IpAddr::V4(Ipv4Addr::new(12
 #[derive(clap::Parser, Debug)]
 #[command(about = "server for joe's messaging app")]
 struct Arguments {
-    #[arg(short = 'b', long = "bind", help = "ip address to bind to")]
+    #[arg(short = 'b', long = "bind", help = "which ip address to listen for connections from")]
     ip: Option<std::net::IpAddr>,
-    #[arg(short = 'c', long = "cpus", help = "number of cpus to use")]
+
+    #[arg(short = 'c', long = "cpus", help = "number of cpus to use to handle connections")]
     cpus: Option<usize>,
+
     #[arg(long = "no-color", help = "whether to use colorful output")]
     no_color: bool,
+
+    #[arg(short = 'u', long = "user", help = "postgres user to connect to the database with; defaults to `messaging_app_user`")]
+    postgres_user: Option<String>,
+
+    #[arg(short = 'd', long = "database", help = "name of database to connect to as `user`; defaults to `messaging_app`")]
+    postgres_db: Option<String>,
+
+    #[arg(short = 's', long = "socket", help = "unix socket to find postgres server; defaults to `/var/run/postgresql`")]
+    postgres_socket: Option<String>,
+
+    #[arg(short = 'p', long = "port", help = "which port to connect to the postgres server with; defaults to `5432`")]
+    postgres_port: Option<u16>,
 }
 
 fn main() {
-    let Arguments { ip, cpus, no_color } = Arguments::parse();
+    let Arguments { ip, cpus, no_color, postgres_user, postgres_db, postgres_socket, postgres_port } = Arguments::parse();
+    println!("{postgres_socket:?}");
     let (notice, critical, error) = which_colors(no_color);
     let num_cpu = cpus.unwrap_or_else(|| {
         let n = num_cpus::get();
@@ -40,10 +54,10 @@ fn main() {
                 .min_connections(num_cpu as u32)
                 .connect_with(
                     sqlx::postgres::PgConnectOptions::new()
-                        .socket("/var/run/postgresql")
-                        .port(5432)
-                        .username("messaging_app_user")
-                        .database("messaging_app"),
+                        .socket(postgres_socket.unwrap_or("/var/run/postgresql".into()))
+                        .port(postgres_port.unwrap_or(5432))
+                        .username(&postgres_user.unwrap_or("messaging_app_user".into()))
+                        .database(&postgres_db.unwrap_or("messaging_app".into())),
                 ),
         )
         .unwrap();
@@ -163,6 +177,7 @@ async fn handle_login(
             }
         },
         _ => {
+            // there are duplicate users, very bad
             lib::send_message(stream, &Message::InternalError)
         }
     }.expect("couldn't send reply");
