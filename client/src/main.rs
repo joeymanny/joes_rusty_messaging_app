@@ -108,7 +108,22 @@ async fn login_menu(menu: &mut Menu, server: &Option<std::net::IpAddr>, ctx: &eg
         ui.vertical_centered(|ui| {
             #[cfg(feature = "HELLA_sus")]
             ui.collapsing("THERE IS NOTHING IN HERE", |ui|{
-                ui.image("https://static1.e621.net/data/a5/b8/a5b888a8b5dfaf28825c9e6a1ae49ff8.png")
+                ui.label("SIKE IT'S BOOBIES");
+                ui.label("ok fine god have furry astolfo");
+
+                ui.horizontal(|ui|{
+                    ui.add(
+                        egui::Image::new("https://static1.e621.net/data/a5/b8/a5b888a8b5dfaf28825c9e6a1ae49ff8.png")
+                            .fit_to_exact_size(egui::Vec2 { x: f32::MAX, y: 400. })
+                            .rounding(100.)
+                    );
+                    ui.add(
+                        egui::Image::new("https://static1.e621.net/data/fd/1e/fd1ede23d0d4c3b617664a5a9e587c89.jpg")
+                            .fit_to_exact_size(egui::Vec2 { x: f32::MAX, y: 400. })
+                            .rounding(100.)
+                    );
+    
+                })
             });
             ui.label("Welcome to login");
             egui::TextEdit::singleline(username)
