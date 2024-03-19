@@ -1,5 +1,8 @@
 use std::{
-    net::{Ipv4Addr, TcpListener, TcpStream}, sync::Arc
+    net::Ipv4Addr, sync::Arc
+};
+use tokio::net::{
+    TcpListener, TcpStream
 };
 
 use clap::Parser;
@@ -8,6 +11,14 @@ use owo_colors::OwoColorize;
 use sqlx::{Pool, Postgres};
 
 const FALLBACK_ADDRESS: std::net::IpAddr = std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+
+#[allow(unused)]
+struct KeepAlive {
+    time: std::time::SystemTime,
+    stream: std::net::TcpStream,
+    ongoing_message: Vec<u8>,
+}
+
 
 #[derive(clap::Parser, Debug)]
 #[command(about = "server for joe's messaging app")]
@@ -34,100 +45,120 @@ struct Arguments {
     postgres_port: Option<u16>,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let Arguments { ip, cpus, no_color, postgres_user, postgres_db, postgres_socket, postgres_port } = Arguments::parse();
-    println!("{postgres_socket:?}");
-    let (notice, critical, error) = which_colors(no_color);
+    let (notice, critical, error) = lib::which_colors(no_color);
     let num_cpu = cpus.unwrap_or_else(|| {
         let n = num_cpus::get();
         eprintln!(
-            "{} no thread count supplied, defaulting to number available ({n})",
-            notice
+            "{notice} no thread count supplied, defaulting to number available ({n})"
         );
         n
     });
-    let rt = tokio::runtime::Runtime::new()
-    .expect("problem getting tokio runtime");
-    let pool = rt
-        .block_on(
-            sqlx::postgres::PgPoolOptions::new()
-                .min_connections(num_cpu as u32)
-                .connect_with(
-                    sqlx::postgres::PgConnectOptions::new()
-                        .socket(postgres_socket.unwrap_or("/var/run/postgresql".into()))
-                        .port(postgres_port.unwrap_or(5432))
-                        .username(&postgres_user.unwrap_or("messaging_app_user".into()))
-                        .database(&postgres_db.unwrap_or("messaging_app".into())),
-                ),
-        )
-        .unwrap();
-    let pool = std::sync::Arc::new(pool);
     let address: std::net::IpAddr = match ip {
         Some(ip) => ip,
         None => {
-            eprintln!("{} no ip provided, defaulting to 127.0.0.1", notice);
+            eprintln!("{notice} no ip provided, defaulting to 127.0.0.1");
             FALLBACK_ADDRESS
         }
     };
+    let postgres_port = match postgres_port {
+        Some(v) => v,
+        None => {
+            eprintln!("{notice}: no port set, defaulting to {}", lib::PORT);
+            5432
+        }
+    };
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .min_connections(num_cpu as u32)
+        .connect_with(
+            sqlx::postgres::PgConnectOptions::new()
+                .socket(postgres_socket.unwrap_or("/var/run/postgresql".into()))
+                .port(postgres_port)
+                .username(&postgres_user.unwrap_or("messaging_app_user".into()))
+                .database(&postgres_db.unwrap_or("messaging_app".into())),
+        ).await.unwrap();
+    let pool = std::sync::Arc::new(pool);
+    let listener: tokio::net::TcpListener = 
+            match TcpListener::bind(
+                std::net::SocketAddr::new(
+                    address,
+                    lib::PORT
+                )
+            ).await {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("{critical} couldn't bind to {} : {}", address, e);
+                    panic!("can't serve without a valid binding")
+                }
+            };
 
-    let listener: std::net::TcpListener =
-        match TcpListener::bind(std::net::SocketAddr::new(address, lib::PORT)) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("{} couldn't bind to {} : {}", critical, address, e);
-                panic!("can't serve without a valid binding")
-            }
-        };
+    let mut workers: Vec<(Arc<tokio::sync::Mutex<bool>>, tokio::sync::mpsc::Sender<tokio::net::TcpStream>, tokio::sync::mpsc::Receiver<()>)> = vec![];
+    
     for i in 0..num_cpu {
-        let listener = listener
-            .try_clone()
-            .unwrap_or_else(|e| panic!("thread #{i} counldn't clone tcp listener: {e}"));
+        let is_ready = Arc::new(tokio::sync::Mutex::new(false));
+
+        let (ready_sender, mut ready_receiver) = tokio::sync::mpsc::channel::<tokio::net::TcpStream>(1);
+
+        let (ack_sender, ack_receiver) = tokio::sync::mpsc::channel::<()>(1);
+
+        workers.push((Arc::clone(&is_ready), ready_sender, ack_receiver));
+        // 49152-65535
         let id = i;
         let error = error.clone();
+        let notice = notice.clone();
+        let _critical = critical.clone();
         let pool = Arc::clone(&pool);
         // rt.block_on(future);
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_multi_thread().enable_time().build().unwrap();
+            let rt = tokio::runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
             rt.block_on(async {
             loop {
-                // block waiting for incoming message
-                let (mut stream, client_sock) = match listener.accept() {
-                    Ok(v) => v,
-                    Err(e) => {
-                        eprintln!("{} problem accepting tcp session: {}", error, e);
-                        continue;
-                    }
+                {
+                *is_ready.lock().await = true;      // we are ready
+                }
+                // block waiting for incoming task
+                let mut stream = match tokio::task::block_in_place(|| ready_receiver.blocking_recv()){
+                    Some(v) => {
+                        v
+                    },
+                    None => break // break loop, ending work
                 };
-                println!("incoming connection from {}", client_sock.ip());
-
+                {
+                    *is_ready.lock().await = false; // we no longer are ready
+                }
+                // acknowledge that lock is ready- prevents more work being schedule while awaiting lock
+                ack_sender.send(()).await.expect("couldn't send ack");
+                eprintln!("sent ack");
                 let data = match lib::get_stream_string(&mut stream).await {
                     Ok(v) => v,
                     Err(e) => {
-                        eprintln!("error getting data: {e:?}");
+                        eprintln!("{error}: couldn't read data from {}: {e:?}", stream.peer_addr().unwrap_or(lib::ERR_SOCKET));
                         continue;
                     }
                 };
                 let message = match serde_json::from_str(&data) {
                     Ok(v) => v,
                     Err(_) => {
-                        match lib::send_message(&mut stream, &lib::Message::BadRequest) {
+                        match lib::send_message(&mut stream, lib::Message::BadRequest).await {
                             Err(e) => {
-                                eprintln!("coundn't send BadRequest reply: {e:?}");
+                                eprintln!("{error}: coundn't send BadRequest reply to {}: {e:?}", stream.peer_addr().unwrap_or(lib::ERR_SOCKET));
                                 continue;
                             }
                             _ => { /* no issue sending error */ }
                         };
-                        println!("bad request from {}", client_sock.ip());
+                        println!("{notice}: bad request from {:?}: {data}", stream.peer_addr().unwrap_or(lib::ERR_SOCKET));
                         continue;
                     }
                 };
                 match message {
                     lib::Message::LoginRequest { username, password } => {
-                        println!("login request from {}", client_sock.ip());
+                        println!("login request from {}", stream.peer_addr().unwrap_or(lib::ERR_SOCKET));
                         handle_login(username, password, &pool, &mut stream).await;
                         eprintln!("handled by thread #{id}");
-                    }
-                    _ => { /* handle other messages here */ }
+                    },
+                    _ => { eprintln!("{notice}: unhandles messages from {}: {message:?}", stream.peer_addr().unwrap_or(lib::ERR_SOCKET)); }
                 }
             }
             })
@@ -142,18 +173,40 @@ fn main() {
         }
     );
     loop {
-        std::thread::sleep(std::time::Duration::MAX);
+        // continually accept streams
+        let (stream, _) = match listener.accept().await {
+            Ok(v) => v,
+            Err(e) => { eprintln!("error accepting connection: {e}"); break }
+        };
+        'find_worker: loop {
+            // look at all workers
+            for (is_ready, channel, ack_receiver) in workers.iter_mut(){
+                match is_ready.try_lock(){
+                    // worker is available
+                    Ok(is_ready) if *is_ready => {
+                        std::mem::drop(is_ready);
+                        channel.send(stream).await.expect("channel should be open");
+                        // wait for lock to be updated
+                        eprintln!("awaiting ack");
+                        tokio::task::block_in_place(||ack_receiver.blocking_recv()).expect("couldn't receiver ack");
+                        break 'find_worker
+                    },
+                    _ => (),
+                }
+                // worker wasn't found: next worker
+            }
+            // no worker was found, loop
+        }
     }
 }
 
-#[derive(sqlx::FromRow)]
-struct UserTableRow{
-    id: i32,
+// #[derive(sqlx::FromRow)]
+struct UserTableRow {
+    id: lib::Uid,
     username: String,
     password: String,
     email: Option<String>
 }
-
 async fn handle_login(
     username: String,
     password: String,
@@ -162,43 +215,30 @@ async fn handle_login(
 ) {
     eprintln!("{username}");
     eprintln!("{password}");
-    let rows: Vec<UserTableRow> = sqlx::query_as("SELECT * FROM users WHERE $1 = users.username")
-        .bind(username)
+    let rows: Vec<UserTableRow> = sqlx::query_as!( UserTableRow,
+        "SELECT * FROM users WHERE $1 = users.username",
+        username
+        )
+        // .bind(username)
         .fetch_all(pool)
         .await
         .unwrap();
     match rows.len(){
-        0 => lib::send_message(stream, &Message::LoginReply(lib::LoginStatus::BadUser)),
+        0 => lib::send_message(stream, Message::LoginReply(lib::LoginStatus::BadUser)),
         1 => {
             if password == rows[0].password {
-                lib::send_message(stream, &Message::LoginReply(lib::LoginStatus::Accepted))
+                lib::send_message(stream, Message::LoginReply(lib::LoginStatus::Accepted{ id: rows[0].id }))
             } else {
-                lib::send_message(stream, &Message::LoginReply(lib::LoginStatus::BadPass))
+                lib::send_message(stream, Message::LoginReply(lib::LoginStatus::BadPass))
             }
         },
         _ => {
             // there are duplicate users, very bad
-            lib::send_message(stream, &Message::InternalError)
+            lib::send_message(stream, Message::InternalError)
         }
-    }.expect("couldn't send reply");
-    if let Err(e) = lib::send_message(stream, &Message::LoginReply(lib::LoginStatus::Accepted)) {
-        eprintln!("coundn't send data: {e:?}");
-    }
+    }.await.expect("couldn't send reply");
+    // if let Err(e) = lib::send_message(stream, &Message::LoginReply(lib::LoginStatus::Accepted)) {
+    //     eprintln!("coundn't send data: {e:?}");
+    // };
 }
-fn which_colors(is: bool) -> (String, String, String) {
-    if is {
-        // dull
-        (
-            "notice:".to_owned(),
-            "critical:".to_owned(),
-            "error:".to_owned(),
-        )
-    } else {
-        // colorful
-        (
-            "notice".yellow().to_string(),
-            "critical".bold().red().on_black().to_string(),
-            "error".red().to_string(),
-        )
-    }
-}
+
