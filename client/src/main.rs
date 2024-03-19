@@ -1,5 +1,9 @@
+use std::error::Error;
+
 use egui::Button;
 use lib::Message;
+
+
 
 fn main() {
     let options = eframe::NativeOptions::default();
@@ -9,7 +13,9 @@ struct MyApp {
     current_menu: Menu,
     server: Option<std::net::IpAddr>,
     ip_submission: String,
-    runtime: tokio::runtime::Runtime
+    runtime: tokio::runtime::Runtime,
+    our_id: Option<lib::Uid>
+    
 }
 #[derive(Clone)]
 enum Menu {
@@ -52,7 +58,8 @@ impl MyApp {
             },
             server: None,
             ip_submission: String::default(),
-            runtime: tokio::runtime::Builder::new_multi_thread().build().unwrap()
+            runtime: tokio::runtime::Builder::new_multi_thread().enable_io().build().unwrap(),
+            our_id: None
         }
     }
 }
@@ -70,20 +77,26 @@ impl eframe::App for MyApp {
                 }
             ));
             let ip_input = ui.text_edit_singleline(&mut self.ip_submission);
-            if ip_input.lost_focus() || (ip_input.clicked_elsewhere() && !self.ip_submission.is_empty()){
+            if (ip_input.lost_focus() || ip_input.clicked_elsewhere()) && !self.ip_submission.is_empty(){
                 self.server = self.ip_submission.parse().ok();
                 self.ip_submission.clear();
             };
         });
         match self.current_menu {
-            Menu::Login { .. } => login_menu(&mut self.current_menu, &self.server, ctx, frame).await,
-            Menu::Contacts => contacts_menu(&mut self.current_menu, ctx, frame),
+            Menu::Login { .. } => login_menu(&mut self.current_menu, &self.server, ctx, frame, &mut self.our_id).await,
+            Menu::Contacts => contacts_menu(&mut self.current_menu, ctx, frame, &mut self.our_id),
             Menu::Chat { user_id } => chat_menu(&mut self.current_menu, ctx, frame, user_id),
         }
     });
     }
 }
-async fn login_menu(menu: &mut Menu, server: &Option<std::net::IpAddr>, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+async fn login_menu(
+    menu: &mut Menu,
+    server: &Option<std::net::IpAddr>,
+    ctx: &egui::Context,
+    _frame: &mut eframe::Frame,
+    our_id: &mut Option<lib::Uid>
+) {
     let mut login: bool = false;
     let (username, password, login_failure, login_now) = match menu {
         Menu::Login {
@@ -95,7 +108,7 @@ async fn login_menu(menu: &mut Menu, server: &Option<std::net::IpAddr>, ctx: &eg
         _ => panic!("this is unreachable"),
     };
     if *login_now {
-        let result = handle_login(server, username.clone(), password.clone()).await;
+        let result = handle_login(server, username.clone(), password.clone(), our_id).await;
         password.clear();
         username.clear();
         if let LoginResult::Success = result {
@@ -156,6 +169,7 @@ async fn handle_login(
     ip: &Option<std::net::IpAddr>,
     username: String,
     mut password: String,
+    our_id: &mut Option<lib::Uid>
 ) -> LoginResult {
     let ip = match ip {
         Some(v) => v,
@@ -163,14 +177,14 @@ async fn handle_login(
     };
     let passhash = lib::get_hash(&password);
     password.clear();
-    let mut stream = match std::net::TcpStream::connect_timeout(&std::net::SocketAddr::new(*ip, lib::PORT), std::time::Duration::from_secs(1)){
+    let mut stream = match tokio::net::TcpStream::connect(&std::net::SocketAddr::new(*ip, lib::PORT)).await{
         Ok(v) => v,
         Err(_e) => return LoginResult::ConnectionTimeout
     };
     lib::send_message(
         &mut stream,
-        &lib::Message::LoginRequest { username, password: passhash}
-    ).unwrap();
+        lib::Message::LoginRequest { username, password: passhash}
+    ).await.unwrap();
     let response = match lib::get_message(&mut stream).await{
         Ok(m) => m,
         Err(_e) => return LoginResult::NetworkError,
@@ -178,7 +192,10 @@ async fn handle_login(
     match response{
         Message::LoginReply(status) => {
             match status{
-                lib::LoginStatus::Accepted => LoginResult::Success,
+                lib::LoginStatus::Accepted{ id } => {
+                    eprintln!("new login, old id was {:?}; new id is {}", our_id.replace(id), id);
+                    LoginResult::Success
+                },
                 lib::LoginStatus::BadPass => LoginResult::BadPass,
                 lib::LoginStatus::BadUser => LoginResult::BadUser,
             }
@@ -187,10 +204,15 @@ async fn handle_login(
 
     }
 }
-fn contacts_menu(menu: &mut Menu, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+fn contacts_menu(menu: &mut Menu,
+    ctx: &egui::Context,
+    _frame: &mut eframe::Frame,
+    our_id: &mut Option<lib::Uid>
+) {
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
             if ui.button("log out").clicked() {
+                handle_logout(our_id).unwrap();
                 *menu = Menu::Login {
                     username: String::new(),
                     password: String::new(),
@@ -206,6 +228,12 @@ fn contacts_menu(menu: &mut Menu, ctx: &egui::Context, _frame: &mut eframe::Fram
         }
     });
 }
+
+fn handle_logout(our_id: &mut Option<lib::Uid>,) -> Result<(), Box<dyn Error>>{
+    eprintln!("logout; id was {:?}", our_id.take());
+    Ok(())
+}
+
 fn chat_menu(menu: &mut Menu, ctx: &egui::Context, _frame: &mut eframe::Frame, chat_id: u32) {
     egui::CentralPanel::default().show(ctx, |ui| {
         if ui.button("back").clicked() {
