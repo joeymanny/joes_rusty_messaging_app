@@ -1,5 +1,6 @@
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
 
+// this type must be copy
 pub type Uid = i32;
 
 pub const MAX_USERNAME_LEN: usize = 20;
