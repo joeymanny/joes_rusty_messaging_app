@@ -13,8 +13,8 @@ lib = { path = "../lib"}
 # owo-colors = "*"
 serde_json = "*"
 clap = { version = "*", features = ["derive"]}
-eframe = { version = "*" }
-egui = "*"
-egui_extras = {version = "*", features = ["all_loaders"]}
+eframe = { version = "0.26.1" }
+egui = "0.26.1"
+egui_extras = {version = "0.26.1", features = ["all_loaders"]}
 image = {version = "*", features = ["gif"]}
 tokio ={ version = "*", features = ["full"]}
